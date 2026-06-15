@@ -1,0 +1,12 @@
+[project]
+name = "QuantumAutoencoder"
+uuid = "6f1a4b3d-9d5b-4e9a-8c2d-3f6b2a1b4c5d"
+authors = ["Ported from QCompress <https://github.com/hsim13372/QCompress>"]
+version = "0.1.0"
+
+[compat]
+julia = ">= 1.6"
+
+[deps]
+Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+
