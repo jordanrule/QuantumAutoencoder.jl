@@ -9,4 +9,6 @@ julia = ">= 1.6"
 
 [deps]
 Flux = "587475ba-b771-5e3f-ad9e-33799f191a9c"
+Yao = "c1e9b7f7-8af8-5b8b-9b86-7a0f3b6f0b5b"
+Optim = "429524aa-e2f6-5b0b-9a56-2d7c7cfb7b6c"
 

@@ -1,5 +1,3 @@
-module QAE
-
 """
 Configuration container for the Quantum Autoencoder port.
 
@@ -27,5 +25,4 @@ mutable struct Config
     end
 end
 
-end # module QAE
 

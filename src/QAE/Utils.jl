@@ -1,5 +1,3 @@
-module QAE
-
 """
 Utility functions for the Julia QAE port.
 
@@ -31,5 +29,4 @@ function load_dataset(path::AbstractString, dataset::AbstractString="/data")
     end
 end
 
-end # module QAE
 

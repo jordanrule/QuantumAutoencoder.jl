@@ -13,9 +13,11 @@ export QAEEngine, Config, load_dataset, compress, decompress
 
 using LinearAlgebra
 
+module QAE
 include("QAE/Config.jl")
 include("QAE/Utils.jl")
 include("QAE/Engine.jl")
+end # module QAE
 
 using .QAE: Config, QAEEngine, load_dataset, compress, decompress
 
