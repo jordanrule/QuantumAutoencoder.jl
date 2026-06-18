@@ -1,5 +1,7 @@
 # QuantumAutoencoder.jl
 
+*"This project is an attempt to codify a latent space I have had in my head after experimenting with IBM quantum a few years back.  I am not qualified to lead the charge, but I'm here as an advocate."*
+
 This repository contains a Julia port of the QCompress Python framework (core quantum autoencoder functionality).
 
 Ported from: https://github.com/hsim13372/QCompress
@@ -73,9 +75,19 @@ QAE.predict(engine)
 
 - Example (quantum / Yao mode): supply `state_prep_circuits` (vector of Yao blocks or callables returning blocks) and a `training_circuit(params)` function that returns a parameterized Yao block. Use `QAE.QAEEngine(q_in, q_latent, state_prep_circuits, training_circuit, ...)` to construct the engine, then call `train` with an initial parameter vector.
 
+- Built-in converted Yao examples (ported equivalents of common pyQuil patterns):
+
+```julia
+using QuantumAutoencoder
+
+prep = QAE.bell_state_prep_circuit()                     # H(0); CNOT(0,1)
+ghz = QAE.ghz_state_prep_circuit(3)                      # H(0); CNOT(0,1); CNOT(0,2)
+ansatz = p -> QAE.simple_qae_training_circuit(p; n_qubits=2)
+```
+
 Limitations and next steps
 --------------------------
-- This is an initial port: the Yao-based engine assumes state-prep and training circuits are already expressed as Yao blocks (no automatic translation from pyQuil). Porting specific pyQuil circuits to Yao is a natural next step.
+- This is an initial port: the Yao-based engine assumes state-prep and training circuits are expressed as Yao blocks (no automatic translation from arbitrary pyQuil programs yet). A few common circuit patterns are now included in `src/QAE/Circuits.jl` as converted examples.
 - `_execute_circuit` currently uses exact statevector simulation to compute probabilities. For larger systems or to mimic real-device sampling you may want shot-based sampling; this can be added using Yao's sampling utilities or a backend that supports measurements.
 - Optimizer choices and gradient-based methods (parameter-shift rules, adjoint methods) are not yet implemented — only a Nelder-Mead style classical optimizer is provided by default.
 
