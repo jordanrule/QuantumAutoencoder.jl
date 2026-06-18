@@ -1,6 +1,6 @@
-# QuantumAutoencoder.jl
+*This project is an attempt to codify a latent space I have had in my head after experimenting with IBM quantum a few years back.  I am not qualified to lead the charge, but I'm here as an advocate.*
 
-*"This project is an attempt to codify a latent space I have had in my head after experimenting with IBM quantum a few years back.  I am not qualified to lead the charge, but I'm here as an advocate."*
+# QuantumAutoencoder.jl
 
 This repository contains a Julia port of the QCompress Python framework (core quantum autoencoder functionality).
 
