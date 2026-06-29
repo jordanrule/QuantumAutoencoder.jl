@@ -40,16 +40,22 @@ catch
     false
 end
 
-export QAEEngine, construct_compression_circuit, construct_recovery_circuit,
+export QAEEngine, ClassicalQAEEngine, AbstractQAEEngine, QuantumEngine, ClassicalEngine,
+       construct_compression_circuit, construct_recovery_circuit,
        train_test_split, compute_loss_function, train, predict, compress, decompress
 
-mutable struct QAEEngine
+# Abstract types for multiple-dispatch
+abstract type AbstractQAEEngine end
+abstract type QuantumEngine <: AbstractQAEEngine end
+abstract type ClassicalEngine <: AbstractQAEEngine end
+
+mutable struct QAEEngine <: QuantumEngine
     q_in::Dict
     q_latent::Dict
     state_prep_circuits::Vector{Any}
     training_circuit::Function
-    state_prep_circuits_dag::Union{Nothing, Vector{Any}}
-    training_circuit_dag::Union{Nothing, Function}
+    state_prep_circuits_dag::Vector{Any}
+    training_circuit_dag::Function
     q_refresh::Dict
     trash_training::Bool
     reset::Bool
@@ -61,7 +67,7 @@ mutable struct QAEEngine
 
     n_shots::Int
     n_iter::Int
-    optimized_params::Union{Nothing, Vector{Float64}}
+    optimized_params::Vector{Float64}
     train_history::Vector{Float64}
     test_history::Vector{Float64}
     verbose::Bool
@@ -69,17 +75,10 @@ mutable struct QAEEngine
 
     memory_size::Int
     _physical_labels::Vector{Int}
-
     n_qubits::Int
-    # optional classical model (fallback) using Flux
-    model::Union{Nothing,Any}
-    encoder::Union{Nothing,Any}
-    decoder::Union{Nothing,Any}
-    opt::Union{Nothing,Any}
-    is_classical::Bool
 
     function QAEEngine(q_in::Dict, q_latent::Dict, state_prep_circuits::Vector, training_circuit::Function;
-                       state_prep_circuits_dag=nothing, training_circuit_dag=nothing,
+                       state_prep_circuits_dag::Vector=Any[], training_circuit_dag::Function=(x)->error("no training circuit dag"),
                        q_refresh=Dict(), trash_training=false, reset=true, compile_program=false,
                        n_shots=1000, verbose=true, print_interval=10)
 
@@ -107,65 +106,71 @@ mutable struct QAEEngine
         eng = new(q_in, q_latent, state_prep_circuits, training_circuit,
                   state_prep_circuits_dag, training_circuit_dag,
                   q_refresh, trash_training, reset, compile_program,
-                  data_size, Int[], Int[], n_shots, 0, nothing,
+                  data_size, Int[], Int[], n_shots, 0, Float64[],
                   Float64[], Float64[], verbose, print_interval,
-                  0, Int[], n_qubits, nothing, nothing, nothing, nothing, false)
+                  0, Int[], n_qubits)
 
         # Validate full training requirements
         if !trash_training
             if !reset && isempty(q_refresh)
                 throw(ArgumentError("The full, no reset training requires q_refresh to be non-empty."))
             end
-            if state_prep_circuits_dag === nothing || training_circuit_dag === nothing
+            if isempty(state_prep_circuits_dag) || isa(training_circuit_dag, Function) && training_circuit_dag == (x)->error("no training circuit dag")
                 throw(ArgumentError("Full training requires daggered circuits for state preparation and training."))
             end
         else
             eng.reset = false
         end
 
-                eng._determine_qubits_to_measure()
-                return eng
-            end
+        eng._determine_qubits_to_measure()
+        return eng
+    end
+end
+
+mutable struct ClassicalQAEEngine <: ClassicalEngine
+    model::Any
+    encoder::Any
+    decoder::Any
+    opt::Any
+    config::Config
+    data_size::Int
+    train_indices::Vector{Int}
+    test_indices::Vector{Int}
+    verbose::Bool
+    print_interval::Int
+    n_iter::Int
+    train_history::Vector{Float64}
+    test_history::Vector{Float64}
+
+    function ClassicalQAEEngine(cfg::Config)
+        if !HAVE_FLUX
+            throw(ErrorException("Flux.jl is required for the classical engine. Please add Flux via `] add Flux`."))
         end
+        n_in = cfg.n_qubits
+        n_latent = cfg.latent_dim
+        enc = Flux.Chain(Flux.Dense(n_in, n_latent, relu))
+        dec = Flux.Chain(Flux.Dense(n_latent, n_in))
+        model = Flux.Chain(enc, dec)
+        opt = Flux.ADAM(cfg.learning_rate)
+        return new(model, enc, dec, opt, cfg, 0, Int[], Int[], cfg.epochs > 0, cfg.print_interval, 0, Float64[], Float64[])
+    end
+end
 
-        """
-Classical constructor for compatibility with existing tests and the earlier
-Flux-based scaffold. Calling `QAEEngine(cfg::Config)` returns an engine that
-operates in classical mode: `compress(engine,data)` will apply a simple
-Flux autoencoder.
 """
-function QAEEngine(cfg::Config; data=nothing)
-    if !HAVE_FLUX
-        throw(ErrorException("Flux.jl is required for the classical engine. Please add Flux via `] add Flux`."))
-    end
-    n_in = cfg.n_qubits
-    n_latent = cfg.latent_dim
-    enc = Flux.Chain(Flux.Dense(n_in, n_latent, relu))
-    dec = Flux.Chain(Flux.Dense(n_latent, n_in))
-    model = Flux.Chain(enc, dec)
-    opt = Flux.ADAM(cfg.learning_rate)
-    eng = QAEEngine(Dict(), Dict(), Any[], x->error("no training circuit");
-                    state_prep_circuits_dag=nothing, training_circuit_dag=nothing,
-                    q_refresh=Dict(), trash_training=false, reset=true, compile_program=false,
-                    n_shots=1000, verbose=cfg.epochs>0, print_interval=cfg.print_interval)
-    eng.model = model
-    eng.encoder = enc
-    eng.decoder = dec
-    eng.opt = opt
-    eng.is_classical = true
-    # attach data if provided
-    if data !== nothing
-        # expect samples x features
-        eng.data_size = size(data, 1)
-    end
-    return eng
+Constructor dispatch for creating a classical engine from a Config.
+This method is provided for backward compatibility.
+"""
+QAEEngine(cfg::Config; data=nothing) = ClassicalQAEEngine(cfg)
+
+function Base.show(io::IO, eng::QuantumEngine)
+    println(io, "Quantum QAE Engine: n_in=$(length(keys(eng.q_in))) n_latent=$(length(keys(eng.q_latent))) data_size=$(eng.data_size)")
 end
 
-function Base.show(io::IO, eng::QAEEngine)
-    println(io, "QAE Engine: n_in=$(length(keys(eng.q_in))) n_latent=$(length(keys(eng.q_latent))) data_size=$(eng.data_size)")
+function Base.show(io::IO, eng::ClassicalQAEEngine)
+    println(io, "Classical QAE Engine: n_features=$(eng.config.n_qubits) n_latent=$(eng.config.latent_dim) data_size=$(eng.data_size)")
 end
 
-function _determine_qubits_to_measure!(eng::QAEEngine)
+function _determine_qubits_to_measure!(eng::QuantumEngine)
     if eng.trash_training
         eng.memory_size = length(keys(eng.q_in)) - length(keys(eng.q_latent))
         eng._physical_labels = [v for (k,v) in eng.q_in if !(haskey(eng.q_latent, k))]
@@ -180,11 +185,9 @@ function _determine_qubits_to_measure!(eng::QAEEngine)
     return nothing
 end
 
-function (eng::QAEEngine)._determine_qubits_to_measure()
-    return _determine_qubits_to_measure!(eng)
-end
+_determine_qubits_to_measure!(eng::ClassicalQAEEngine) = nothing
 
-function construct_compression_circuit(eng::QAEEngine, parameters::Vector{Float64}, index::Int)
+function construct_compression_circuit(eng::QuantumEngine, parameters::Vector{Float64}, index::Int)
     if !HAVE_YAO
         throw(ErrorException("Yao.jl is required to construct quantum circuits. Please add Yao via `] add Yao`."))
     end
@@ -195,7 +198,7 @@ function construct_compression_circuit(eng::QAEEngine, parameters::Vector{Float6
     return training_block * prep_block
 end
 
-function construct_recovery_circuit(eng::QAEEngine, parameters::Vector{Float64}, index::Int)
+function construct_recovery_circuit(eng::QuantumEngine, parameters::Vector{Float64}, index::Int)
     if eng.trash_training
         throw(ErrorException("Invalid command for halfway training!"))
     end
@@ -204,7 +207,7 @@ function construct_recovery_circuit(eng::QAEEngine, parameters::Vector{Float64},
     return prep_dag * training_dag
 end
 
-function _execute_circuit(eng::QAEEngine, qae_block)
+function _execute_circuit(eng::QuantumEngine, qae_block)
     if !HAVE_YAO
         throw(ErrorException("Yao.jl is required to execute quantum circuits. Please add Yao via `] add Yao`."))
     end
@@ -237,7 +240,7 @@ function _execute_circuit(eng::QAEEngine, qae_block)
     return totalp
 end
 
-function _compute_loss(eng::QAEEngine, parameters::Vector{Float64}, history_list::Vector{Float64}, dataset_type::Int, indices::Vector{Int})
+function _compute_loss(eng::QuantumEngine, parameters::Vector{Float64}, history_list::Vector{Float64}, dataset_type::Int, indices::Vector{Int})
     losses = Float64[]
     for (i, index) in enumerate(indices)
         comp = construct_compression_circuit(eng, parameters, index)
@@ -261,11 +264,11 @@ function _compute_loss(eng::QAEEngine, parameters::Vector{Float64}, history_list
     return mean_loss
 end
 
-function compute_loss_function(eng::QAEEngine, parameters::Vector{Float64})
+function compute_loss_function(eng::QuantumEngine, parameters::Vector{Float64})
     return _compute_loss(eng, parameters, eng.train_history, 0, eng.train_indices)
 end
 
-function train(eng::QAEEngine, initial_guess::Vector{Float64})
+function train(eng::QuantumEngine, initial_guess::Vector{Float64})
     if isempty(eng.train_indices) || isempty(eng.test_indices)
         throw(ErrorException("Please split your data set into training and test sets before training."))
     end
@@ -278,9 +281,9 @@ function train(eng::QAEEngine, initial_guess::Vector{Float64})
     try
         eng.optimized_params = Optim.minimizer(res)
     catch
-        eng.optimized_params = nothing
+        eng.optimized_params = Float64[]
     end
-    if eng.optimized_params !== nothing
+    if !isempty(eng.optimized_params)
         avg_loss = compute_loss_function(eng, eng.optimized_params)
     else
         avg_loss = compute_loss_function(eng, initial_guess)
@@ -291,8 +294,8 @@ function train(eng::QAEEngine, initial_guess::Vector{Float64})
     return avg_loss
 end
 
-function predict(eng::QAEEngine)
-    if eng.optimized_params === nothing
+function predict(eng::QuantumEngine)
+    if isempty(eng.optimized_params)
         throw(ErrorException("Parameters have not yet been optimized. Please train first."))
     end
     avg_loss = _compute_loss(eng, eng.optimized_params, eng.test_history, 1, eng.test_indices)
@@ -302,31 +305,42 @@ function predict(eng::QAEEngine)
     return avg_loss
 end
 
-function compress(eng::QAEEngine, parameters::Vector{Float64}, index::Int)
+"""
+    compress(eng::QuantumEngine, parameters::Vector{Float64}, index::Int)
+
+Compress data using a quantum circuit (quantum mode).
+"""
+function compress(eng::QuantumEngine, parameters::Vector{Float64}, index::Int)
     return construct_compression_circuit(eng, parameters, index)
 end
 
-function decompress(eng::QAEEngine, parameters::Vector{Float64}, index::Int)
+"""
+    compress(eng::ClassicalQAEEngine, data::Array{Float64,2})
+
+Compress data using the classical Flux-based autoencoder (classical mode).
+"""
+function compress(eng::ClassicalQAEEngine, data::Array{Float64,2})
+    batch = permutedims(data) # features x samples
+    latent = eng.encoder(batch)
+    return permutedims(Array(latent)) # samples x latent_dim
+end
+
+"""
+    decompress(eng::QuantumEngine, parameters::Vector{Float64}, index::Int)
+
+Decompress data using a quantum circuit (quantum mode).
+"""
+function decompress(eng::QuantumEngine, parameters::Vector{Float64}, index::Int)
     return construct_recovery_circuit(eng, parameters, index)
 end
 
-# Classical-mode convenience methods for backward compatibility with tests
-function compress(eng::QAEEngine, data::Array{Float64,2})
-    if eng.is_classical && eng.encoder !== nothing
-        batch = permutedims(data) # features x samples
-        latent = eng.encoder(batch)
-        return permutedims(Array(latent)) # samples x latent_dim
-    else
-        throw(ErrorException("compress(engine, data) is only available for classical engines. Use compress(engine, params, index) for quantum engines."))
-    end
-end
+"""
+    decompress(eng::ClassicalQAEEngine, latent::Array{Float64,2})
 
-function decompress(eng::QAEEngine, latent::Array{Float64,2})
-    if eng.is_classical && eng.decoder !== nothing
-        batch = permutedims(latent)
-        recon = eng.decoder(batch)
-        return permutedims(Array(recon))
-    else
-        throw(ErrorException("decompress(engine, latent) is only available for classical engines. Use decompress(engine, params, index) for quantum engines."))
-    end
+Decompress data using the classical Flux-based autoencoder (classical mode).
+"""
+function decompress(eng::ClassicalQAEEngine, latent::Array{Float64,2})
+    batch = permutedims(latent)
+    recon = eng.decoder(batch)
+    return permutedims(Array(recon))
 end

@@ -35,12 +35,12 @@ function bell_state_prep_circuit()
 end
 
 """
-    ghz_state_prep_circuit(n_qubits::Int=3)
+    ghz_state_prep_circuit(n_qubits::Integer=3)
 
 A direct Yao equivalent of a GHZ preparation circuit:
 `H(0); CNOT(0,1); CNOT(0,2); ...`.
 """
-function ghz_state_prep_circuit(n_qubits::Int=3)
+function ghz_state_prep_circuit(n_qubits::Integer=3)
     _require_yao_for_circuits()
     n_qubits >= 2 || throw(ArgumentError("n_qubits must be >= 2"))
 
@@ -57,7 +57,7 @@ end
 A small parameterized ansatz that can be passed directly as `training_circuit`
 when constructing `QAEEngine`.
 """
-function simple_qae_training_circuit(params::AbstractVector{<:Real}; n_qubits::Int=2)
+function simple_qae_training_circuit(params::AbstractVector{<:Real}; n_qubits::Integer=2)
     _require_yao_for_circuits()
     n_qubits >= 2 || throw(ArgumentError("n_qubits must be >= 2"))
     expected = 2 * n_qubits
