@@ -130,10 +130,6 @@ The framework provides built-in circuit templates (Bell states, GHZ states, para
 
 **Type system**: The refactoring to multiple-dispatch (June 2026) enables extensibility; new engine implementations can be added as subtypes of `AbstractQAEEngine` without modifying core logic.
 
-## Recent Developments
-
-**Type System Refactoring (June 2026)**: The codebase underwent a significant refactoring to make the quantum-classical distinction explicit and extensible through Julia's type system. An abstract type hierarchy (`AbstractQAEEngine` → `{QuantumEngine, ClassicalEngine}`) replaces runtime type checks. This improves compile-time specialization, type safety, and allows users to implement custom engines by subtyping. Backward compatibility is maintained through constructor dispatch: `QAEEngine(cfg::Config)` automatically returns a `ClassicalQAEEngine`. See `README_IMPROVEMENTS.md` for comprehensive documentation.
-
 Attribution
 -----------
 This Julia package is a port and retains attribution to the original QCompress repository:
