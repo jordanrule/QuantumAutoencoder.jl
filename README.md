@@ -45,6 +45,20 @@ How the architecture fits together (Yao.jl + Flux.jl)
 - Flux.jl (classical fallback):
   - For quick tests and compatibility, a small MLP autoencoder implemented with Flux is available via `QAEEngine(cfg::Config)` (classical mode). This lets tests and examples run without quantum backends while keeping the same `compress`/`decompress` API shape for simple experiments.
 
+Type System & Multiple-Dispatch Design
+----------------------------------------
+The codebase uses Julia's **multiple-dispatch** paradigm to cleanly separate quantum and classical modes:
+
+- **Type Hierarchy**: An abstract `AbstractQAEEngine` defines the contract, with `QuantumEngine` and `ClassicalEngine` as subtypes. Concrete implementations are `QAEEngine` (quantum circuits) and `ClassicalQAEEngine` (neural networks).
+- **Dispatch-Based Methods**: Rather than runtime type checks (`if engine.is_classical`), the framework uses Julia's type-based dispatch. For example:
+  - `compress(eng::QuantumEngine, params::Vector, index::Int)` — quantum circuit compression
+  - `compress(eng::ClassicalQAEEngine, data::Array)` — classical network compression
+  - The compiler selects the correct method based on the engine type passed in.
+- **Backward Compatibility**: The constructor `QAEEngine(cfg::Config)` automatically dispatches to `ClassicalQAEEngine`, so existing code continues to work unchanged.
+- **Extensibility**: Users can create custom engine types by subtyping `AbstractQAEEngine` and implementing the interface methods. The dispatch system automatically routes calls to the correct implementation.
+
+This approach eliminates runtime overhead, improves type safety (errors caught at compile-time), and makes the code more maintainable. For more details, see `README_IMPROVEMENTS.md` in the repository root.
+
 Quick usage notes
 -----------------
 - To run tests or use the package you will need Julia and the project dependencies. From the package root:
@@ -65,12 +79,11 @@ julia --project=. -e 'using Pkg; Pkg.add(["Yao","Optim","Flux","HDF5"])'
 ```julia
 using QuantumAutoencoder
 cfg = QAE.Config(n_qubits=2, latent_dim=1, epochs=10, batch_size=8)
-engine = QAE.QAEEngine(cfg)   # classical Flux-based engine
+engine = QAE.QAEEngine(cfg)   # classical Flux-based engine (via dispatch)
+# Or be explicit: engine = QAE.ClassicalQAEEngine(cfg)
 data = randn(100, cfg.n_qubits)
-engine.data = data
-QAE.train_test_split(engine, train_ratio=0.8)
-loss = QAE.train(engine)
-QAE.predict(engine)
+compressed = QAE.compress(engine, data)
+reconstructed = QAE.decompress(engine, compressed)
 ```
 
 - Example (quantum / Yao mode): supply `state_prep_circuits` (vector of Yao blocks or callables returning blocks) and a `training_circuit(params)` function that returns a parameterized Yao block. Use `QAE.QAEEngine(q_in, q_latent, state_prep_circuits, training_circuit, ...)` to construct the engine, then call `train` with an initial parameter vector.
@@ -90,6 +103,10 @@ Limitations and next steps
 - This is an initial port: the Yao-based engine assumes state-prep and training circuits are expressed as Yao blocks (no automatic translation from arbitrary pyQuil programs yet). A few common circuit patterns are now included in `src/QAE/Circuits.jl` as converted examples.
 - `_execute_circuit` currently uses exact statevector simulation to compute probabilities. For larger systems or to mimic real-device sampling you may want shot-based sampling; this can be added using Yao's sampling utilities or a backend that supports measurements.
 - Optimizer choices and gradient-based methods (parameter-shift rules, adjoint methods) are not yet implemented — only a Nelder-Mead style classical optimizer is provided by default.
+
+Recent improvements
+-------------------
+- **Type System Refactoring (June 2026)**: The codebase now uses Julia's multiple-dispatch paradigm throughout. The type system has been restructured with an abstract type hierarchy (`AbstractQAEEngine`, `QuantumEngine`, `ClassicalEngine`) and concrete implementations (`QAEEngine`, `ClassicalQAEEngine`). This improves performance (compile-time dispatch vs. runtime checks), type safety, and extensibility. Backward compatibility is maintained. See `README_IMPROVEMENTS.md` for comprehensive documentation of the refactoring.
 
 Attribution
 -----------
